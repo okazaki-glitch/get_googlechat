@@ -89,7 +89,7 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
 
   const headerRow = 6;
   sheet.getRange(headerRow, 1, 1, 4).setValues([
-    ['投稿日時', '投稿者', '本文', 'メッセージID']
+    ['投稿日時', '投稿者ID', '本文', 'メッセージID']
   ]);
 
   if (messages.length === 0) {
@@ -101,7 +101,7 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
     const createTime = message.createTime
       ? Utilities.formatDate(new Date(message.createTime), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss')
       : '';
-    const sender = message.sender && message.sender.displayName ? message.sender.displayName : '';
+    const sender = extractSenderId_(message.sender);
     const text = extractMessageText_(message);
     const messageId = message.name || '';
 
@@ -120,6 +120,25 @@ function extractMessageText_(message) {
     return message.formattedText;
   }
   return '';
+}
+
+function extractSenderId_(sender) {
+  if (!sender) {
+    return '';
+  }
+  const senderName = sender.name || '';
+  if (!senderName) {
+    return '';
+  }
+
+  // 例: users/12345678901234567890 -> 12345678901234567890
+  const userMatch = senderName.match(/^users\/([^\/]+)$/);
+  if (userMatch) {
+    return userMatch[1];
+  }
+
+  // users以外(apps/..., anonymousUsers/...)は識別のため元値をそのまま返す。
+  return senderName;
 }
 
 function parseThreadFromUrl_(threadUrl) {
