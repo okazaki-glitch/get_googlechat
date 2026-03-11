@@ -51,10 +51,14 @@ function fetchThreadMessages_(spaceName, threadName) {
 
   do {
     const options = {
-      filter: `thread.name = ${threadName}`,
       orderBy: 'createTime ASC',
       pageSize: 1000
     };
+
+    // スレッド指定がある場合のみフィルターする。指定がない場合はスペース全体を取得する。
+    if (threadName) {
+      options.filter = `thread.name = ${threadName}`;
+    }
 
     if (pageToken) {
       options.pageToken = pageToken;
@@ -80,7 +84,7 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
     ['取得日時', Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss')],
     ['スレッドURL', threadUrl],
     ['スペース名', threadInfo.spaceName],
-    ['スレッド名', threadInfo.threadName]
+    ['スレッド名', threadInfo.threadName || '（指定なし: スペース全体）']
   ]);
 
   const headerRow = 6;
@@ -134,14 +138,19 @@ function parseThreadFromUrl_(threadUrl) {
 
   // chat.google.com/room/{space}/{thread} 形式を解析する。
   for (const candidate of candidates) {
-    const roomMatch = candidate.match(/\/room\/([^\/?#&]+)\/([^\/?#&]+)/i);
+    const roomMatch = candidate.match(/\/room\/([^\/?#&]+)(?:\/([^\/?#&]+))?/i);
     if (roomMatch) {
       const spaceId = roomMatch[1];
       const threadId = roomMatch[2];
-      return {
-        spaceName: `spaces/${spaceId}`,
-        threadName: `spaces/${spaceId}/threads/${threadId}`
-      };
+      return threadId
+        ? {
+            spaceName: `spaces/${spaceId}`,
+            threadName: `spaces/${spaceId}/threads/${threadId}`
+          }
+        : {
+            spaceName: `spaces/${spaceId}`,
+            threadName: ''
+          };
     }
   }
 
@@ -158,9 +167,21 @@ function parseThreadFromUrl_(threadUrl) {
     }
   }
 
+  // mail.google.com/.../#chat/space/{space} 形式を解析する（スレッド指定なし）。
+  for (const candidate of candidates) {
+    const spaceOnlyMatch = candidate.match(/\/space\/([^\/?#&]+)/i);
+    if (spaceOnlyMatch) {
+      const spaceId = spaceOnlyMatch[1];
+      return {
+        spaceName: `spaces/${spaceId}`,
+        threadName: ''
+      };
+    }
+  }
+
   throw new Error(
     'スレッドURLからスペースIDとスレッドIDを抽出できませんでした。' +
-      'URLに「spaces/.../threads/...」または「.../space/{space}/thread/{thread}」が含まれているか確認してください。'
+      'URLに「spaces/.../threads/...」「.../space/{space}/thread/{thread}」または「.../space/{space}」が含まれているか確認してください。'
   );
 }
 
