@@ -34,7 +34,7 @@ function copyGoogleChatThreadToSheet() {
 
     ui.alert(`完了: ${messages.length}件のメッセージを「${targetSheet.getName()}」へ出力しました。`);
   } catch (error) {
-    ui.alert(`取得に失敗しました: ${error.message}`);
+    ui.alert(buildChatApiErrorMessage_(error));
   }
 }
 
@@ -235,4 +235,22 @@ function buildNewSheetName_(spreadsheet) {
   }
 
   return sheetName;
+}
+
+function buildChatApiErrorMessage_(error) {
+  const rawMessage = error && error.message ? String(error.message) : String(error);
+
+  if (rawMessage.includes('Google Chat app not found')) {
+    return (
+      '取得に失敗しました: Google Chat APIのアプリ設定が未完了です。\n\n' +
+      '対応手順:\n' +
+      '1) Apps Scriptの「プロジェクトの設定」で、標準のGoogle Cloudプロジェクトを紐付ける\n' +
+      '2) そのGoogle Cloudプロジェクトで「Google Chat API」を有効化する\n' +
+      '3) Google Chat API > Configurationでアプリ情報（名前/アイコンURL/説明）を入力して保存する\n' +
+      '4) スクリプトを再実行して権限を再承認する\n\n' +
+      '補足: Chat APIはGoogle Workspaceアカウントが必要です。'
+    );
+  }
+
+  return `取得に失敗しました: ${rawMessage}`;
 }
