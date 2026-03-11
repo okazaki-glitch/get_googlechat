@@ -27,11 +27,15 @@ function copyGoogleChatThreadToSheet() {
     return;
   }
 
-  const messages = fetchThreadMessages_(threadInfo.spaceName, threadInfo.threadName);
-  const targetSheet = getTargetSheet_();
-  writeMessagesToSheet_(targetSheet, threadUrl, threadInfo, messages);
+  try {
+    const messages = fetchThreadMessages_(threadInfo.spaceName, threadInfo.threadName);
+    const targetSheet = getTargetSheet_();
+    writeMessagesToSheet_(targetSheet, threadUrl, threadInfo, messages);
 
-  ui.alert(`完了: ${messages.length}件のメッセージを「${targetSheet.getName()}」へ出力しました。`);
+    ui.alert(`完了: ${messages.length}件のメッセージを「${targetSheet.getName()}」へ出力しました。`);
+  } catch (error) {
+    ui.alert(`取得に失敗しました: ${error.message}`);
+  }
 }
 
 function onOpen() {
@@ -46,12 +50,17 @@ function fetchThreadMessages_(spaceName, threadName) {
   let pageToken = null;
 
   do {
-    const response = Chat.Spaces.Messages.list(spaceName, {
+    const options = {
       filter: `thread.name = ${threadName}`,
       orderBy: 'createTime ASC',
-      pageSize: 1000,
-      pageToken: pageToken
-    });
+      pageSize: 1000
+    };
+
+    if (pageToken) {
+      options.pageToken = pageToken;
+    }
+
+    const response = Chat.Spaces.Messages.list(spaceName, options);
 
     if (response.messages && response.messages.length > 0) {
       messages.push(...response.messages);
@@ -75,8 +84,8 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
   ]);
 
   const headerRow = 6;
-  sheet.getRange(headerRow, 1, 1, 5).setValues([
-    ['投稿日時', '投稿者', '本文', 'メッセージID', 'メッセージURL']
+  sheet.getRange(headerRow, 1, 1, 4).setValues([
+    ['投稿日時', '投稿者', '本文', 'メッセージID']
   ]);
 
   if (messages.length === 0) {
@@ -91,13 +100,12 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
     const sender = message.sender && message.sender.displayName ? message.sender.displayName : '';
     const text = extractMessageText_(message);
     const messageId = message.name || '';
-    const messageUrl = message.name ? `https://chat.google.com/${message.name}` : '';
 
-    return [createTime, sender, text, messageId, messageUrl];
+    return [createTime, sender, text, messageId];
   });
 
   sheet.getRange(headerRow + 1, 1, rows.length, rows[0].length).setValues(rows);
-  sheet.autoResizeColumns(1, 5);
+  sheet.autoResizeColumns(1, 4);
 }
 
 function extractMessageText_(message) {
@@ -157,11 +165,22 @@ function parseThreadFromUrl_(threadUrl) {
 }
 
 function decodePossiblyEncodedUrl_(url) {
-  try {
-    return decodeURIComponent(url);
-  } catch (error) {
-    return url;
+  let decoded = url;
+
+  // 2回までデコードして、エンコード済みのリソース名を抽出しやすくする。
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) {
+        break;
+      }
+      decoded = next;
+    } catch (error) {
+      break;
+    }
   }
+
+  return decoded;
 }
 
 function normalizeResourceName_(resourceName) {
