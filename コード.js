@@ -88,8 +88,8 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
   ]);
 
   const headerRow = 6;
-  sheet.getRange(headerRow, 1, 1, 6).setValues([
-    ['投稿日時', '投稿者ID', '本文', 'メッセージID', '画像/添付URL', 'オブジェクトURL']
+  sheet.getRange(headerRow, 1, 1, 7).setValues([
+    ['投稿日時', '投稿者ID', '本文', 'メッセージID', 'スレッドID', '画像/添付URL', 'オブジェクトURL']
   ]);
 
   if (messages.length === 0) {
@@ -104,14 +104,15 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
     const sender = extractSenderId_(message.sender);
     const text = extractMessageText_(message);
     const messageId = message.name || '';
+    const threadId = extractThreadId_(message, threadInfo.threadName);
     const attachmentUrls = collectAttachmentAndImageUrls_(message);
     const objectUrls = collectObjectUrls_(message);
 
-    return [createTime, sender, text, messageId, attachmentUrls, objectUrls];
+    return [createTime, sender, text, messageId, threadId, attachmentUrls, objectUrls];
   });
 
   sheet.getRange(headerRow + 1, 1, rows.length, rows[0].length).setValues(rows);
-  sheet.autoResizeColumns(1, 6);
+  sheet.autoResizeColumns(1, 7);
 }
 
 function extractMessageText_(message) {
@@ -258,6 +259,22 @@ function extractSenderId_(sender) {
 
   // users以外(apps/..., anonymousUsers/...)は識別のため元値をそのまま返す。
   return senderName;
+}
+
+function extractThreadId_(message, defaultThreadName) {
+  const threadName =
+    (message.thread && message.thread.name) ||
+    message.threadName ||
+    defaultThreadName ||
+    '';
+
+  if (!threadName) {
+    return '';
+  }
+
+  // 例: spaces/AAAA/threads/BBBB -> BBBB
+  const threadMatch = String(threadName).match(/threads\/([^\/]+)$/);
+  return threadMatch ? threadMatch[1] : String(threadName);
 }
 
 function parseThreadFromUrl_(threadUrl) {
