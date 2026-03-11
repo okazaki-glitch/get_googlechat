@@ -88,8 +88,8 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
   ]);
 
   const headerRow = 6;
-  sheet.getRange(headerRow, 1, 1, 4).setValues([
-    ['投稿日時', '投稿者ID', '本文', 'メッセージID']
+  sheet.getRange(headerRow, 1, 1, 6).setValues([
+    ['投稿日時', '投稿者ID', '本文', 'メッセージID', '画像/添付URL', 'オブジェクトURL']
   ]);
 
   if (messages.length === 0) {
@@ -104,12 +104,14 @@ function writeMessagesToSheet_(sheet, threadUrl, threadInfo, messages) {
     const sender = extractSenderId_(message.sender);
     const text = extractMessageText_(message);
     const messageId = message.name || '';
+    const attachmentUrls = collectAttachmentAndImageUrls_(message);
+    const objectUrls = collectObjectUrls_(message);
 
-    return [createTime, sender, text, messageId];
+    return [createTime, sender, text, messageId, attachmentUrls, objectUrls];
   });
 
   sheet.getRange(headerRow + 1, 1, rows.length, rows[0].length).setValues(rows);
-  sheet.autoResizeColumns(1, 4);
+  sheet.autoResizeColumns(1, 6);
 }
 
 function extractMessageText_(message) {
@@ -120,6 +122,123 @@ function extractMessageText_(message) {
     return message.formattedText;
   }
   return '';
+}
+
+function collectAttachmentAndImageUrls_(message) {
+  const urls = [];
+  const attachments = []
+    .concat(Array.isArray(message.attachment) ? message.attachment : [])
+    .concat(Array.isArray(message.attachments) ? message.attachments : []);
+
+  attachments.forEach((attachment) => {
+    if (attachment.downloadUri) {
+      urls.push(attachment.downloadUri);
+    }
+    if (attachment.thumbnailUri) {
+      urls.push(attachment.thumbnailUri);
+    }
+    const driveFileId = attachment.driveDataRef && attachment.driveDataRef.driveFileId;
+    if (driveFileId) {
+      urls.push(buildDriveFileUrlFromId_(driveFileId));
+    }
+  });
+
+  const gifs = Array.isArray(message.attachedGifs) ? message.attachedGifs : [];
+  gifs.forEach((gif) => {
+    if (gif.uri) {
+      urls.push(gif.uri);
+    }
+  });
+
+  return normalizeAndJoinUrls_(urls);
+}
+
+function collectObjectUrls_(message) {
+  const urls = [];
+
+  if (message.matchedUrl && message.matchedUrl.url) {
+    urls.push(message.matchedUrl.url);
+  }
+
+  const annotations = Array.isArray(message.annotations) ? message.annotations : [];
+  annotations.forEach((annotation) => {
+    const richLink = annotation.richLinkMetadata;
+    if (richLink && richLink.uri) {
+      urls.push(richLink.uri);
+    }
+    const driveFileId =
+      richLink &&
+      richLink.driveLinkData &&
+      richLink.driveLinkData.driveDataRef &&
+      richLink.driveLinkData.driveDataRef.driveFileId;
+    if (driveFileId) {
+      urls.push(buildDriveFileUrlFromId_(driveFileId));
+    }
+  });
+
+  // Chatアプリのカード/ウィジェット内URLも抽出する。
+  const cardLikeParts = [message.cards, message.cardsV2, message.accessoryWidgets];
+  cardLikeParts.forEach((part) => {
+    urls.push(...extractUrlsFromNestedObject_(part));
+  });
+
+  return normalizeAndJoinUrls_(urls);
+}
+
+function extractUrlsFromNestedObject_(value) {
+  const urls = [];
+
+  function traverse_(target) {
+    if (!target) {
+      return;
+    }
+    if (Array.isArray(target)) {
+      target.forEach((item) => traverse_(item));
+      return;
+    }
+    if (typeof target !== 'object') {
+      return;
+    }
+
+    Object.keys(target).forEach((key) => {
+      const child = target[key];
+      if (typeof child === 'string' && isLikelyUrlFieldKey_(key) && /^https?:\/\//i.test(child)) {
+        urls.push(child);
+        return;
+      }
+      traverse_(child);
+    });
+  }
+
+  traverse_(value);
+  return urls;
+}
+
+function isLikelyUrlFieldKey_(key) {
+  return /(^url$|^uri$|imageUrl$|thumbnailUri$|downloadUri$)/i.test(key);
+}
+
+function buildDriveFileUrlFromId_(driveFileId) {
+  return `https://drive.google.com/file/d/${driveFileId}/view`;
+}
+
+function normalizeAndJoinUrls_(urls) {
+  const uniqueUrls = [];
+  const seen = {};
+
+  urls.forEach((url) => {
+    if (!url) {
+      return;
+    }
+    const normalized = String(url).trim();
+    if (!normalized || seen[normalized]) {
+      return;
+    }
+    seen[normalized] = true;
+    uniqueUrls.push(normalized);
+  });
+
+  return uniqueUrls.join('\n');
 }
 
 function extractSenderId_(sender) {
